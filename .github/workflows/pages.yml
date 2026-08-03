@@ -25,78 +25,104 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Prepare private browser converter
+      - name: Build private browser converter
         env:
           BUILD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          mkdir -p vendor
-          curl --fail --location --retry 3 \
-            "https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js" \
-            --output vendor/lame.min.js
+          mkdir -p assets/fonts vendor/ffmpeg vendor/ffmpeg-core
+          mkdir -p /tmp/ffmpeg-package /tmp/core-package
+
+          # Reconstruct and verify the exact Krasar Black web font supplied by the owner.
+          cat font-parts/Krasar-Black.woff2.part*.b64 \
+            | base64 --decode \
+            > assets/fonts/Krasar-Black.woff2
+
+          echo "e671bff6c257c7747fd4d0676579311707a6477bc5fc968ed1fff5cd8ce626d2  assets/fonts/Krasar-Black.woff2" \
+            | sha256sum --check --strict
+
+          # Bundle FFmpeg 0.12 and the single-thread core on the same origin.
+          FFMPEG_TGZ="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
+          tar -xzf "/tmp/${FFMPEG_TGZ}" -C /tmp/ffmpeg-package
+          cp -a /tmp/ffmpeg-package/package/dist/umd/. vendor/ffmpeg/
+
+          CORE_TGZ="$(npm pack --silent @ffmpeg/core@0.12.10 --pack-destination /tmp)"
+          tar -xzf "/tmp/${CORE_TGZ}" -C /tmp/core-package
+          cp /tmp/core-package/package/dist/umd/ffmpeg-core.js vendor/ffmpeg-core/
+          cp /tmp/core-package/package/dist/umd/ffmpeg-core.wasm vendor/ffmpeg-core/
+
+          CLASS_WORKER="$(find vendor/ffmpeg -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' | head -n 1)"
+          test -n "${CLASS_WORKER}"
+          export CLASS_WORKER_BASENAME="$(basename "${CLASS_WORKER}")"
 
           python - <<'PY'
           import os
+          import re
           from pathlib import Path
 
-          build = os.environ.get("BUILD_SHA", "release")[:12]
+          build = os.environ["BUILD_SHA"][:12]
+          class_worker = os.environ["CLASS_WORKER_BASENAME"]
+
           html_path = Path("index.html")
-          css_path = Path("styles.css")
+          converter_path = Path("converter-v3.js")
 
           html = html_path.read_text(encoding="utf-8")
-          css = css_path.read_text(encoding="utf-8")
 
-          font_links = """  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n  <link href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@700;800;900&display=swap\" rel=\"stylesheet\">\n"""
+          # Remove all previous converter engines and generated stylesheet links.
+          html = re.sub(
+              r'\s*<script[^>]+(?:@ffmpeg/ffmpeg|vendor/ffmpeg|vendor/lame|converter-v2|converter-v3)[^>]*></script>',
+              '',
+              html,
+              flags=re.IGNORECASE,
+          )
+          html = re.sub(
+              r'\s*<link[^>]+href="font\.css(?:\?[^\"]*)?"[^>]*>',
+              '',
+              html,
+              flags=re.IGNORECASE,
+          )
 
-          if "fonts.googleapis.com" not in html:
-              html = html.replace(
-                  '  <link rel="stylesheet" href="styles.css">',
-                  font_links + f'  <link rel="stylesheet" href="styles.css?v={build}">'
-              )
-          else:
-              html = html.replace('href="styles.css"', f'href="styles.css?v={build}"')
+          # Add a unique version to prevent browsers from retaining old broken files.
+          html = re.sub(
+              r'href="styles\.css(?:\?[^\"]*)?"',
+              f'href="styles.css?v={build}"',
+              html,
+          )
+          html = re.sub(
+              r'src="app\.js(?:\?[^\"]*)?"',
+              f'src="app.js?v={build}"',
+              html,
+          )
 
-          ffmpeg_tag = '  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js" defer></script>\n'
-          html = html.replace(ffmpeg_tag, '')
-          html = html.replace('src="app.js"', f'src="app.js?v={build}"')
+          styles_tag = f'  <link rel="stylesheet" href="styles.css?v={build}">'
+          font_tag = f'\n  <link rel="stylesheet" href="font.css?v={build}">'
+          if font_tag.strip() not in html:
+              html = html.replace(styles_tag, styles_tag + font_tag)
 
           app_tag = f'  <script src="app.js?v={build}" defer></script>'
-          browser_encoder_tags = (
-              app_tag
-              + f'\n  <script src="vendor/lame.min.js?v={build}" defer></script>'
-              + f'\n  <script src="converter-v2.js?v={build}" defer></script>'
+          engine_tags = (
+              f'  <script src="vendor/ffmpeg/ffmpeg.js?v={build}" defer></script>\n'
+              + app_tag
+              + f'\n  <script src="converter-v3.js?v={build}" defer></script>'
           )
-          if "converter-v2.js" not in html:
-              html = html.replace(app_tag, browser_encoder_tags)
+          html = html.replace(app_tag, engine_tags)
 
-          font_override = """
-
-          @font-face {
-            font-family: "Krasar Black Local";
-            src: local("Krasar Black"), local("Krasar-Black"), local("KrasarBlack");
-            font-style: normal;
-            font-weight: 900;
-            font-display: swap;
-          }
-
-          html,
-          body,
-          button,
-          input,
-          select,
-          textarea {
-            font-family: "Krasar Black Local", "Krasar Black", "Noto Sans Khmer", sans-serif !important;
-            font-weight: 900 !important;
-          }
-          """
-
-          if 'font-family: "Krasar Black Local"' not in css:
-              css += font_override
+          converter = converter_path.read_text(encoding="utf-8")
+          converter = converter.replace("__CLASS_WORKER__", class_worker)
 
           html_path.write_text(html, encoding="utf-8")
-          css_path.write_text(css, encoding="utf-8")
+          converter_path.write_text(converter, encoding="utf-8")
           PY
+
+          test -s assets/fonts/Krasar-Black.woff2
+          test -s vendor/ffmpeg/ffmpeg.js
+          test -s vendor/ffmpeg-core/ffmpeg-core.js
+          test -s vendor/ffmpeg-core/ffmpeg-core.wasm
+          grep -q 'font.css' index.html
+          grep -q 'vendor/ffmpeg/ffmpeg.js' index.html
+          grep -q 'converter-v3.js' index.html
+          grep -q "${CLASS_WORKER_BASENAME}" converter-v3.js
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
