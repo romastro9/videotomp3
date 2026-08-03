@@ -1,31 +1,54 @@
-# VideoToMP3
+# VideoToMP3 V4
 
-A polished Apple-inspired MP4-to-MP3 converter that runs entirely inside the user's browser.
+A private Apple-inspired batch video-to-audio converter that runs entirely inside the user's browser.
 
 ## Live website
 
 https://romastro9.github.io/videotomp3/
 
-## Main features
+## Input formats
 
-- Drag-and-drop MP4 selection
-- Private browser-side conversion with FFmpeg WebAssembly
-- MP3 quality presets: 128, 192, 256, and 320 kbps
-- Rename the downloaded MP3 file
-- Optional start and end trimming
-- Optional loudness normalization
-- Real-time conversion progress
-- Conversion cancellation
-- MP3 preview and direct download
-- Khmer and English interface
+- MP4
+- MOV
+- MKV
+- AVI
+- WebM
+- M4V
+
+## Output formats
+
+- MP3
+- WAV
+- M4A
+- AAC
+- OGG
+- FLAC
+
+## V4 features
+
+- Multi-file drag and drop
+- Conversion queue with up to 25 files
+- Sequential batch conversion to reduce memory use
+- Individual progress and status for every file
+- Retry failed or cancelled files
+- Remove files from the queue
+- Clear completed, failed, or cancelled items
+- Individual output downloads
+- Stereo or mono output
+- Sample rates: 22.05, 44.1, and 48 kHz
+- Bitrate control from 64 to 320 kbps
+- Constant bitrate (CBR)
+- Variable bitrate (VBR)
+- Estimated total output size
+- Same-origin FFmpeg WebAssembly engine
+- Exact embedded Krasar Black web font
+- Responsive Apple-inspired interface
 - Light and dark modes
-- Responsive Apple-inspired layout
-- Apple-style outline icons and rounded controls
-- Maximum selectable file size: 500 MB
+- Maximum file size: 500 MB per file
 
 ## Privacy
 
-This project does not use:
+The project does not use:
 
 - A database
 - User accounts
@@ -33,62 +56,53 @@ This project does not use:
 - Analytics
 - Local storage
 - Upload APIs
-- Conversion history
 - Permanent media storage
+- Conversion history
 
-The selected MP4 and generated MP3 remain in temporary browser memory. Media is not uploaded to the website server. Resetting the converter, refreshing the page, or closing the tab clears the session data.
-
-The FFmpeg application files are loaded from jsDelivr when conversion is first used. Only the converter code is downloaded; the user's video is not sent to the CDN.
+Selected videos and generated audio stay in temporary browser memory. Media is never uploaded to the website server. Refreshing or closing the page clears the active session.
 
 ## Technology
 
 - HTML5
 - CSS3
 - Vanilla JavaScript
-- FFmpeg WebAssembly `0.11.6`
+- FFmpeg WebAssembly `0.12.15`
+- FFmpeg Core `0.12.10`
 - GitHub Pages
+- Krasar Black embedded as WOFF2
 
 ## Project structure
 
 ```text
 videotomp3/
 ├── .github/workflows/pages.yml
-├── .nojekyll
+├── assets/fonts/
+├── font-parts/
 ├── app.js
+├── batch-v4.css
+├── converter-v4.js
 ├── favicon.svg
+├── font.css
 ├── index.html
 ├── README.md
 └── styles.css
 ```
 
-## Run locally
-
-A local web server is recommended because FFmpeg WebAssembly loads browser resources dynamically.
-
-```bash
-python -m http.server 8080
-```
-
-Open:
-
-```text
-http://localhost:8080
-```
-
 ## Deployment
 
-The GitHub Actions workflow in `.github/workflows/pages.yml` deploys every push to the `main` branch.
+The GitHub Actions workflow deploys every push to `main`.
 
-When enabling GitHub Pages for the first time:
+For the first deployment:
 
 1. Open repository **Settings**.
 2. Open **Pages**.
 3. Set **Source** to **GitHub Actions**.
-4. Open the **Actions** tab and run the Pages workflow if it has not started automatically.
+4. Run the Pages workflow from the **Actions** tab when needed.
 
 ## Browser notes
 
-- Chrome, Edge, Firefox, and Safari are recommended.
-- Conversion speed depends on the user's processor and available memory.
-- Very large videos can be slower or fail on low-memory mobile devices.
-- An internet connection is required the first time the FFmpeg engine is loaded.
+- Chrome and Edge are recommended for the best performance.
+- Conversion speed depends on processor speed and available memory.
+- Files are processed sequentially to avoid loading the full queue into FFmpeg memory at once.
+- Very large files may be slower on mobile devices.
+- The FFmpeg engine is bundled with the deployed site and loads on the first conversion.
