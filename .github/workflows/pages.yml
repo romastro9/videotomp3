@@ -20,19 +20,65 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Apply Krasar font
+      - name: Bundle converter engine and prepare release
+        env:
+          BUILD_SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
+
+          mkdir -p vendor/ffmpeg
+
+          curl --fail --location --retry 3 \
+            "https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js" \
+            --output vendor/ffmpeg/ffmpeg.min.js
+
+          curl --fail --location --retry 3 \
+            "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js" \
+            --output vendor/ffmpeg/ffmpeg-core.js
+
+          curl --fail --location --retry 3 \
+            "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.wasm" \
+            --output vendor/ffmpeg/ffmpeg-core.wasm
+
+          curl --fail --location --retry 3 \
+            "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.worker.js" \
+            --output vendor/ffmpeg/ffmpeg-core.worker.js
+
           python - <<'PY'
+          import os
           from pathlib import Path
 
-          path = Path("styles.css")
-          css = path.read_text(encoding="utf-8")
-          font_import = '@import url("https://fonts.googleapis.com/css2?family=Krasar&display=swap");\n\n'
-          font_override = '''
+          build = os.environ.get("BUILD_SHA", "release")[:12]
+          html_path = Path("index.html")
+          css_path = Path("styles.css")
+          app_path = Path("app.js")
+
+          html = html_path.read_text(encoding="utf-8")
+          css = css_path.read_text(encoding="utf-8")
+          app = app_path.read_text(encoding="utf-8")
+
+          font_links = """  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n  <link href=\"https://fonts.googleapis.com/css2?family=Krasar&display=swap\" rel=\"stylesheet\">\n"""
+
+          if "family=Krasar" not in html:
+              html = html.replace(
+                  '  <link rel="stylesheet" href="styles.css">',
+                  font_links + f'  <link rel="stylesheet" href="styles.css?v={build}">'
+              )
+          else:
+              html = html.replace('href="styles.css"', f'href="styles.css?v={build}"')
+
+          html = html.replace(
+              '<script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js" defer></script>',
+              f'<script src="vendor/ffmpeg/ffmpeg.min.js?v={build}" defer></script>'
+          )
+          html = html.replace('src="app.js"', f'src="app.js?v={build}"')
+
+          font_override = """
 
           html,
           body,
@@ -42,14 +88,17 @@ jobs:
           textarea {
             font-family: "Krasar", sans-serif !important;
           }
-          '''
-
-          if "family=Krasar" not in css:
-              css = font_import + css
+          """
           if 'font-family: "Krasar"' not in css:
               css += font_override
 
-          path.write_text(css, encoding="utf-8")
+          old_core = "const CORE_PATH = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js';"
+          new_core = "const CORE_PATH = new URL('vendor/ffmpeg/ffmpeg-core.js', window.location.href).href;"
+          app = app.replace(old_core, new_core)
+
+          html_path.write_text(html, encoding="utf-8")
+          css_path.write_text(css, encoding="utf-8")
+          app_path.write_text(app, encoding="utf-8")
           PY
 
       - name: Configure GitHub Pages
