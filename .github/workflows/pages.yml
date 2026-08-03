@@ -23,12 +23,43 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Apply Krasar font
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("styles.css")
+          css = path.read_text(encoding="utf-8")
+          font_import = '@import url("https://fonts.googleapis.com/css2?family=Krasar&display=swap");\n\n'
+          font_override = '''
+
+          html,
+          body,
+          button,
+          input,
+          select,
+          textarea {
+            font-family: "Krasar", sans-serif !important;
+          }
+          '''
+
+          if "family=Krasar" not in css:
+              css = font_import + css
+          if 'font-family: "Krasar"' not in css:
+              css += font_override
+
+          path.write_text(css, encoding="utf-8")
+          PY
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
+
       - name: Upload website
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
+
       - name: Deploy website
         id: deployment
         uses: actions/deploy-pages@v4
