@@ -47,7 +47,7 @@ jobs:
           html = html_path.read_text(encoding="utf-8")
           css = css_path.read_text(encoding="utf-8")
 
-          font_links = """  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n  <link href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n"""
+          font_links = """  <link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n  <link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n  <link href=\"https://fonts.googleapis.com/css2?family=Noto+Sans+Khmer:wght@700;800;900&display=swap\" rel=\"stylesheet\">\n"""
 
           if "fonts.googleapis.com" not in html:
               html = html.replace(
@@ -73,8 +73,10 @@ jobs:
           font_override = """
 
           @font-face {
-            font-family: "Krasar Local";
-            src: local("Krasar"), local("Krasar Regular");
+            font-family: "Krasar Black Local";
+            src: local("Krasar Black"), local("Krasar-Black"), local("KrasarBlack");
+            font-style: normal;
+            font-weight: 900;
             font-display: swap;
           }
 
@@ -84,11 +86,12 @@ jobs:
           input,
           select,
           textarea {
-            font-family: "Krasar Local", "Krasar", "Noto Sans Khmer", sans-serif !important;
+            font-family: "Krasar Black Local", "Krasar Black", "Noto Sans Khmer", sans-serif !important;
+            font-weight: 900 !important;
           }
           """
 
-          if 'font-family: "Krasar Local"' not in css:
+          if 'font-family: "Krasar Black Local"' not in css:
               css += font_override
 
           html_path.write_text(html, encoding="utf-8")
