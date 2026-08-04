@@ -74,7 +74,6 @@ jobs:
 
           html = html_path.read_text(encoding="utf-8")
 
-          # Remove old converter and generated release assets.
           html = re.sub(
               r'\s*<script[^>]+(?:@ffmpeg/ffmpeg|vendor/ffmpeg|vendor/lame|converter-v2|converter-v3|converter-v4)[^>]*></script>',
               '',
@@ -93,7 +92,6 @@ jobs:
               html,
               flags=re.IGNORECASE,
           )
-
           html = re.sub(
               r'href="styles\.css(?:\?[^\"]*)?"',
               f'href="styles.css?v={build}"',
@@ -137,10 +135,6 @@ jobs:
               raise SystemExit("Class worker placeholder missing")
           converter = converter.replace("__CLASS_WORKER__", class_worker)
 
-          old_constants = (
-              "  const ENGINE_BASE = new URL('vendor/ffmpeg-core/', document.baseURI).href;\n"
-              f"  const CLASS_WORKER_URL = new URL('vendor/ffmpeg/{class_worker}', document.baseURI).href;"
-          )
           new_constants = f'''  const CLASS_WORKER_URL = new URL('vendor/ffmpeg/{class_worker}?v={build}', document.baseURI).href;
           const CORE_BASE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/';
           const CORE_JS_URL = `${{CORE_BASE_URL}}ffmpeg-core.js`;
@@ -157,15 +151,17 @@ jobs:
             ENGINE_BLOB_URLS.push(blobURL);
             return blobURL;
           }}'''
-          if old_constants not in converter:
-              raise SystemExit("Unable to locate FFmpeg URL constants")
-          converter = converter.replace(old_constants, new_constants, 1)
 
-          old_load = '''      await instance.load({
-                  classWorkerURL: CLASS_WORKER_URL,
-                  coreURL: `${ENGINE_BASE}ffmpeg-core.js`,
-                  wasmURL: `${ENGINE_BASE}ffmpeg-core.wasm`
-                });'''
+          converter, constants_count = re.subn(
+              r"  const ENGINE_BASE = new URL\('vendor/ffmpeg-core/', document\.baseURI\)\.href;\s*"
+              r"  const CLASS_WORKER_URL = new URL\('vendor/ffmpeg/[^']+', document\.baseURI\)\.href;",
+              lambda _: new_constants,
+              converter,
+              count=1,
+          )
+          if constants_count != 1:
+              raise SystemExit(f"FFmpeg constants replacement count: {constants_count}")
+
           new_load = '''      const [coreURL, wasmURL] = await Promise.all([
                   fetchAsBlobURL(CORE_JS_URL, 'text/javascript'),
                   fetchAsBlobURL(CORE_WASM_URL, 'application/wasm')
@@ -175,9 +171,19 @@ jobs:
                   coreURL,
                   wasmURL
                 });'''
-          if old_load not in converter:
-              raise SystemExit("Unable to locate FFmpeg load configuration")
-          converter = converter.replace(old_load, new_load, 1)
+
+          converter, load_count = re.subn(
+              r"      await instance\.load\(\{\s*"
+              r"classWorkerURL: CLASS_WORKER_URL,\s*"
+              r"coreURL: `\$\{ENGINE_BASE\}ffmpeg-core\.js`,\s*"
+              r"wasmURL: `\$\{ENGINE_BASE\}ffmpeg-core\.wasm`\s*"
+              r"\}\);",
+              lambda _: new_load,
+              converter,
+              count=1,
+          )
+          if load_count != 1:
+              raise SystemExit(f"FFmpeg load replacement count: {load_count}")
 
           html_path.write_text(html, encoding="utf-8")
           converter_path.write_text(converter, encoding="utf-8")
