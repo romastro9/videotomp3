@@ -1,4 +1,4 @@
-name: Deploy VideoToMP3 V6
+name: Deploy VideoToMP3 V7
 
 on:
   push:
@@ -25,21 +25,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build verified V6 release
+      - name: Build verified V7 classic release
         run: |
           set -euo pipefail
 
-          rm -rf _site /tmp/ffmpeg-package /tmp/core-package
+          rm -rf _site /tmp/ffmpeg-legacy-package /tmp/core-legacy-package
           mkdir -p \
             _site/assets/fonts \
-            _site/vendor/ffmpeg \
-            _site/vendor/ffmpeg-core \
-            /tmp/ffmpeg-package \
-            /tmp/core-package
+            _site/vendor/ffmpeg-legacy \
+            _site/vendor/ffmpeg-core-legacy \
+            /tmp/ffmpeg-legacy-package \
+            /tmp/core-legacy-package
 
           cp index-v5.html _site/index.html
-          cp styles.css font.css batch-v4.css favicon.svg .nojekyll theme-v6.js _site/
-          cp converter-v4.js _site/converter-v5.js
+          cp styles.css font.css batch-v4.css favicon.svg .nojekyll theme-v6.js ffmpeg-legacy-adapter.js _site/
+          cp converter-v4.js _site/converter-v7.js
 
           cat font-parts/Krasar-Black.woff2.part*.b64 \
             | base64 --decode \
@@ -52,46 +52,53 @@ jobs:
           if len(font) < 10000 or font[:4] != b'wOF2':
               raise SystemExit('Krasar Black WOFF2 validation failed')
 
-          converter_path = Path('_site/converter-v5.js')
+          converter_path = Path('_site/converter-v7.js')
           converter = converter_path.read_text(encoding='utf-8')
-          old = "new URL('vendor/ffmpeg/__CLASS_WORKER__', document.baseURI).href"
-          new = "new URL('vendor/ffmpeg/ffmpeg-worker.js?v=6', document.baseURI).href"
-          if converter.count(old) != 1:
-              raise SystemExit(f'Worker placeholder count was {converter.count(old)}, expected 1')
-          converter_path.write_text(converter.replace(old, new), encoding='utf-8')
+          converter = converter.replace(
+              "vendor/ffmpeg-core/",
+              "vendor/ffmpeg-core-legacy/"
+          )
+          converter = converter.replace(
+              "vendor/ffmpeg/__CLASS_WORKER__",
+              "vendor/ffmpeg-legacy/ffmpeg.min.js"
+          )
+          converter_path.write_text(converter, encoding='utf-8')
           print(f'Validated Krasar Black WOFF2: {len(font)} bytes')
           PY
 
-          FFMPEG_PACKAGE="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
-          tar -xzf "/tmp/${FFMPEG_PACKAGE}" -C /tmp/ffmpeg-package
-          cp /tmp/ffmpeg-package/package/dist/umd/ffmpeg.js _site/vendor/ffmpeg/ffmpeg.js
+          FFMPEG_PACKAGE="$(npm pack --silent @ffmpeg/ffmpeg@0.11.6 --pack-destination /tmp)"
+          tar -xzf "/tmp/${FFMPEG_PACKAGE}" -C /tmp/ffmpeg-legacy-package
+          FFMPEG_MAIN="$(find /tmp/ffmpeg-legacy-package/package -type f -name 'ffmpeg.min.js' -print -quit)"
+          test -n "${FFMPEG_MAIN}"
+          cp "${FFMPEG_MAIN}" _site/vendor/ffmpeg-legacy/ffmpeg.min.js
 
-          WORKER_FILE="$(find /tmp/ffmpeg-package/package/dist/umd -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' -print -quit)"
-          test -n "${WORKER_FILE}"
-          cp "${WORKER_FILE}" _site/vendor/ffmpeg/ffmpeg-worker.js
-
-          CORE_PACKAGE="$(npm pack --silent @ffmpeg/core@0.12.10 --pack-destination /tmp)"
-          tar -xzf "/tmp/${CORE_PACKAGE}" -C /tmp/core-package
-          cp /tmp/core-package/package/dist/esm/ffmpeg-core.js _site/vendor/ffmpeg-core/ffmpeg-core.js
-          cp /tmp/core-package/package/dist/esm/ffmpeg-core.wasm _site/vendor/ffmpeg-core/ffmpeg-core.wasm
+          CORE_PACKAGE="$(npm pack --silent @ffmpeg/core@0.11.0 --pack-destination /tmp)"
+          tar -xzf "/tmp/${CORE_PACKAGE}" -C /tmp/core-legacy-package
+          CORE_MAIN="$(find /tmp/core-legacy-package/package -type f -name 'ffmpeg-core.js' -print -quit)"
+          test -n "${CORE_MAIN}"
+          CORE_DIR="$(dirname "${CORE_MAIN}")"
+          cp -a "${CORE_DIR}/." _site/vendor/ffmpeg-core-legacy/
 
           node --check _site/theme-v6.js
-          node --check _site/converter-v5.js
+          node --check _site/ffmpeg-legacy-adapter.js
+          node --check _site/converter-v7.js
 
           test -s _site/index.html
           test -s _site/assets/fonts/Krasar-Black.woff2
-          test -s _site/vendor/ffmpeg/ffmpeg.js
-          test -s _site/vendor/ffmpeg/ffmpeg-worker.js
-          test -s _site/vendor/ffmpeg-core/ffmpeg-core.js
-          test -s _site/vendor/ffmpeg-core/ffmpeg-core.wasm
-          test "$(stat -c%s _site/vendor/ffmpeg-core/ffmpeg-core.wasm)" -gt 10000000
+          test -s _site/vendor/ffmpeg-legacy/ffmpeg.min.js
+          test -s _site/vendor/ffmpeg-core-legacy/ffmpeg-core.js
+          test -s _site/vendor/ffmpeg-core-legacy/ffmpeg-core.wasm
+          test "$(stat -c%s _site/vendor/ffmpeg-core-legacy/ffmpeg-core.wasm)" -gt 10000000
 
-          grep -q 'converter-v5.js?v=6' _site/index.html
-          grep -q 'theme-v6.js?v=6' _site/index.html
-          grep -q 'vendor/ffmpeg/ffmpeg-worker.js?v=6' _site/converter-v5.js
-          grep -q 'vendor/ffmpeg-core/' _site/converter-v5.js
-          ! grep -q '__CLASS_WORKER__' _site/converter-v5.js
+          grep -q 'VideoToMP3 V7' _site/index.html
+          grep -q 'vendor/ffmpeg-legacy/ffmpeg.min.js?v=7' _site/index.html
+          grep -q 'ffmpeg-legacy-adapter.js?v=7' _site/index.html
+          grep -q 'converter-v7.js?v=7' _site/index.html
+          grep -q 'vendor/ffmpeg-core-legacy/ffmpeg-core.js' _site/ffmpeg-legacy-adapter.js
+          grep -q 'window.FFmpegWASM' _site/ffmpeg-legacy-adapter.js
+          ! grep -q '__CLASS_WORKER__' _site/converter-v7.js
           ! grep -q 'bootstrap-v5.js' _site/index.html
+          ! grep -q 'blob:' _site/ffmpeg-legacy-adapter.js
 
           python - <<'PY'
           from pathlib import Path
@@ -102,17 +109,17 @@ jobs:
               'font.css',
               'batch-v4.css',
               'theme-v6.js',
-              'converter-v5.js',
+              'ffmpeg-legacy-adapter.js',
+              'converter-v7.js',
               'assets/fonts/Krasar-Black.woff2',
-              'vendor/ffmpeg/ffmpeg.js',
-              'vendor/ffmpeg/ffmpeg-worker.js',
-              'vendor/ffmpeg-core/ffmpeg-core.js',
-              'vendor/ffmpeg-core/ffmpeg-core.wasm',
+              'vendor/ffmpeg-legacy/ffmpeg.min.js',
+              'vendor/ffmpeg-core-legacy/ffmpeg-core.js',
+              'vendor/ffmpeg-core-legacy/ffmpeg-core.wasm',
           ]
           missing = [item for item in required if not Path('_site', item).is_file()]
           if missing:
-              raise SystemExit(f'Missing release files: {missing}')
-          print('VideoToMP3 V6 static artifact verified.')
+              raise SystemExit(f'Missing V7 release files: {missing}')
+          print('VideoToMP3 V7 classic artifact verified.')
           PY
 
       - name: Configure GitHub Pages
