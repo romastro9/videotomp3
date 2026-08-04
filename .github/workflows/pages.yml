@@ -25,41 +25,49 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build V4 browser converter
+      - name: Build verified V4 site
         env:
           BUILD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
-          rm -rf assets/fonts vendor/ffmpeg vendor/ffmpeg-core
-          mkdir -p assets/fonts vendor/ffmpeg vendor/ffmpeg-core
+          rm -rf _site /tmp/ffmpeg-package /tmp/core-package
+          mkdir -p _site/assets/fonts _site/vendor/ffmpeg _site/vendor/ffmpeg-core
           mkdir -p /tmp/ffmpeg-package /tmp/core-package
 
-          # Restore the Krasar Black WOFF2 generated from the owner's font.
+          # Copy only the static project files into the Pages artifact.
+          rsync -a \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='_site/' \
+            ./ _site/
+
+          # Restore and validate the exact Krasar Black WOFF2 supplied by the owner.
           cat font-parts/Krasar-Black.woff2.part*.b64 \
             | base64 --decode \
-            > assets/fonts/Krasar-Black.woff2
+            > _site/assets/fonts/Krasar-Black.woff2
 
           python - <<'PY'
           from pathlib import Path
-          font = Path("assets/fonts/Krasar-Black.woff2").read_bytes()
+          font = Path("_site/assets/fonts/Krasar-Black.woff2").read_bytes()
           if len(font) < 10000 or font[:4] != b"wOF2":
               raise SystemExit("Krasar Black WOFF2 validation failed")
           print(f"Validated Krasar Black WOFF2: {len(font)} bytes")
           PY
 
-          # Bundle the FFmpeg application, class worker, core JavaScript and WASM
-          # on the same GitHub Pages origin to avoid browser worker/CORS failures.
+          # Bundle the FFmpeg browser API and its module worker on the same origin.
           FFMPEG_TGZ="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
           tar -xzf "/tmp/${FFMPEG_TGZ}" -C /tmp/ffmpeg-package
-          cp -a /tmp/ffmpeg-package/package/dist/umd/. vendor/ffmpeg/
+          cp -a /tmp/ffmpeg-package/package/dist/umd/. _site/vendor/ffmpeg/
 
+          # The FFmpeg class worker is created with type=module. Its fallback uses
+          # dynamic import(coreURL), so the core JavaScript MUST be the ESM build.
           CORE_TGZ="$(npm pack --silent @ffmpeg/core@0.12.10 --pack-destination /tmp)"
           tar -xzf "/tmp/${CORE_TGZ}" -C /tmp/core-package
-          cp /tmp/core-package/package/dist/umd/ffmpeg-core.js vendor/ffmpeg-core/
-          cp /tmp/core-package/package/dist/umd/ffmpeg-core.wasm vendor/ffmpeg-core/
+          cp /tmp/core-package/package/dist/esm/ffmpeg-core.js _site/vendor/ffmpeg-core/ffmpeg-core.js
+          cp /tmp/core-package/package/dist/esm/ffmpeg-core.wasm _site/vendor/ffmpeg-core/ffmpeg-core.wasm
 
-          CLASS_WORKER="$(find vendor/ffmpeg -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' | head -n 1)"
+          CLASS_WORKER="$(find _site/vendor/ffmpeg -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' | head -n 1)"
           test -n "${CLASS_WORKER}"
           export CLASS_WORKER_BASENAME="$(basename "${CLASS_WORKER}")"
 
@@ -70,13 +78,12 @@ jobs:
 
           build = os.environ["BUILD_SHA"][:12]
           class_worker = os.environ["CLASS_WORKER_BASENAME"]
+          html_path = Path("_site/index.html")
+          converter_path = Path("_site/converter-v4.js")
 
-          html_path = Path("index.html")
-          converter_path = Path("converter-v4.js")
           html = html_path.read_text(encoding="utf-8")
 
-          # Remove every previously generated converter, engine, release CSS,
-          # and build marker so this deployment is deterministic.
+          # Remove every old converter or generated release asset.
           html = re.sub(
               r'\s*<script[^>]+(?:@ffmpeg/ffmpeg|vendor/ffmpeg|vendor/lame|converter-v2|converter-v3|converter-v4)[^>]*></script>',
               '',
@@ -90,7 +97,7 @@ jobs:
               flags=re.IGNORECASE,
           )
           html = re.sub(
-              r'\s*<meta\s+name="app-build"[^>]*>',
+              r'\s*<meta[^>]+name="videotomp3-build"[^>]*>',
               '',
               html,
               flags=re.IGNORECASE,
@@ -107,59 +114,66 @@ jobs:
               html,
           )
 
-          html = html.replace(
-              '  <meta charset="utf-8">',
-              f'  <meta charset="utf-8">\n  <meta name="app-build" content="{build}">',
-          )
-
           styles_tag = f'  <link rel="stylesheet" href="styles.css?v={build}">'
-          release_styles = (
+          if styles_tag not in html:
+              raise SystemExit("Unable to locate styles.css tag")
+          html = html.replace(
+              styles_tag,
               styles_tag
               + f'\n  <link rel="stylesheet" href="font.css?v={build}">'
-              + f'\n  <link rel="stylesheet" href="batch-v4.css?v={build}">'
+              + f'\n  <link rel="stylesheet" href="batch-v4.css?v={build}">',
+              1,
           )
-          if styles_tag not in html:
-              raise SystemExit("Base stylesheet tag was not found")
-          html = html.replace(styles_tag, release_styles, 1)
 
           app_tag = f'  <script src="app.js?v={build}" defer></script>'
-          release_scripts = (
+          if app_tag not in html:
+              raise SystemExit("Unable to locate app.js tag")
+          html = html.replace(
+              app_tag,
               f'  <script src="vendor/ffmpeg/ffmpeg.js?v={build}" defer></script>\n'
               + app_tag
-              + f'\n  <script src="converter-v4.js?v={build}" defer></script>'
+              + f'\n  <script src="converter-v4.js?v={build}" defer></script>',
+              1,
           )
-          if app_tag not in html:
-              raise SystemExit("Base app script tag was not found")
-          html = html.replace(app_tag, release_scripts, 1)
+          html = html.replace(
+              '</head>',
+              f'  <meta name="videotomp3-build" content="{build}">\n</head>',
+              1,
+          )
 
           converter = converter_path.read_text(encoding="utf-8")
           if "__CLASS_WORKER__" not in converter:
-              raise SystemExit("Converter worker placeholder was not found")
+              raise SystemExit("Class worker placeholder missing")
           converter = converter.replace("__CLASS_WORKER__", class_worker)
 
           html_path.write_text(html, encoding="utf-8")
           converter_path.write_text(converter, encoding="utf-8")
           PY
 
-          test -s assets/fonts/Krasar-Black.woff2
-          test -s vendor/ffmpeg/ffmpeg.js
-          test -s vendor/ffmpeg-core/ffmpeg-core.js
-          test -s vendor/ffmpeg-core/ffmpeg-core.wasm
-          grep -q 'app-build' index.html
-          grep -q 'font.css' index.html
-          grep -q 'batch-v4.css' index.html
-          grep -q 'vendor/ffmpeg/ffmpeg.js' index.html
-          grep -q 'converter-v4.js' index.html
-          grep -q "${CLASS_WORKER_BASENAME}" converter-v4.js
-          grep -q 'Krasar-Black.woff2' font.css
+          # Fail the deployment if any required browser asset is missing or mismatched.
+          test -s _site/assets/fonts/Krasar-Black.woff2
+          test -s _site/vendor/ffmpeg/ffmpeg.js
+          test -s "${CLASS_WORKER}"
+          test -s _site/vendor/ffmpeg-core/ffmpeg-core.js
+          test -s _site/vendor/ffmpeg-core/ffmpeg-core.wasm
+          grep -Eq 'export[[:space:]]+default' _site/vendor/ffmpeg-core/ffmpeg-core.js
+          grep -q 'font.css' _site/index.html
+          grep -q 'batch-v4.css' _site/index.html
+          grep -q 'vendor/ffmpeg/ffmpeg.js' _site/index.html
+          grep -q 'converter-v4.js' _site/index.html
+          grep -q "${CLASS_WORKER_BASENAME}" _site/converter-v4.js
+          ! grep -q '__CLASS_WORKER__' _site/converter-v4.js
+          ! grep -q '@ffmpeg/ffmpeg@0.11' _site/index.html
+
+          echo "Built VideoToMP3 ${BUILD_SHA} with ESM FFmpeg core"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload website artifact
+      - name: Upload website
         uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
 
       - name: Deploy website
         id: deployment
