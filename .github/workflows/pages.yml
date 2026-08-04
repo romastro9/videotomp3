@@ -1,4 +1,4 @@
-name: Deploy VideoToMP3 to GitHub Pages
+name: Deploy VideoToMP3 V4
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: videotomp3-pages
   cancel-in-progress: true
 
 jobs:
@@ -25,24 +25,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build V4 private batch converter
+      - name: Build V4 browser converter
         env:
           BUILD_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
 
+          rm -rf assets/fonts vendor/ffmpeg vendor/ffmpeg-core
           mkdir -p assets/fonts vendor/ffmpeg vendor/ffmpeg-core
           mkdir -p /tmp/ffmpeg-package /tmp/core-package
 
-          # Reconstruct and verify the exact Krasar Black font supplied by the owner.
+          # Restore the exact Krasar Black TTF uploaded by the owner.
           cat font-parts/Krasar-Black.woff2.part*.b64 \
             | base64 --decode \
-            > assets/fonts/Krasar-Black.woff2
+            > assets/fonts/Krasar-Black.ttf
 
-          echo "e671bff6c257c7747fd4d0676579311707a6477bc5fc968ed1fff5cd8ce626d2  assets/fonts/Krasar-Black.woff2" \
+          echo "e671bff6c257c7747fd4d0676579311707a6477bc5fc968ed1fff5cd8ce626d2  assets/fonts/Krasar-Black.ttf" \
             | sha256sum --check --strict
 
-          # Bundle FFmpeg application, worker and single-thread core on the same origin.
+          # Bundle the FFmpeg application, class worker, core JavaScript and WASM
+          # on the same GitHub Pages origin to avoid browser worker/CORS failures.
           FFMPEG_TGZ="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
           tar -xzf "/tmp/${FFMPEG_TGZ}" -C /tmp/ffmpeg-package
           cp -a /tmp/ffmpeg-package/package/dist/umd/. vendor/ffmpeg/
@@ -68,7 +70,8 @@ jobs:
           converter_path = Path("converter-v4.js")
           html = html_path.read_text(encoding="utf-8")
 
-          # Remove every previous generated converter engine and V4 release tag.
+          # Remove every previously generated converter, engine, release CSS,
+          # and build marker so the deployment is deterministic.
           html = re.sub(
               r'\s*<script[^>]+(?:@ffmpeg/ffmpeg|vendor/ffmpeg|vendor/lame|converter-v2|converter-v3|converter-v4)[^>]*></script>',
               '',
@@ -81,8 +84,13 @@ jobs:
               html,
               flags=re.IGNORECASE,
           )
+          html = re.sub(
+              r'\s*<meta\s+name="app-build"[^>]*>',
+              '',
+              html,
+              flags=re.IGNORECASE,
+          )
 
-          # Cache-bust the base application files.
           html = re.sub(
               r'href="styles\.css(?:\?[^\"]*)?"',
               f'href="styles.css?v={build}"',
@@ -94,13 +102,20 @@ jobs:
               html,
           )
 
+          html = html.replace(
+              '  <meta charset="utf-8">',
+              f'  <meta charset="utf-8">\n  <meta name="app-build" content="{build}">',
+          )
+
           styles_tag = f'  <link rel="stylesheet" href="styles.css?v={build}">'
           release_styles = (
               styles_tag
               + f'\n  <link rel="stylesheet" href="font.css?v={build}">'
               + f'\n  <link rel="stylesheet" href="batch-v4.css?v={build}">'
           )
-          html = html.replace(styles_tag, release_styles)
+          if styles_tag not in html:
+              raise SystemExit("Base stylesheet tag was not found")
+          html = html.replace(styles_tag, release_styles, 1)
 
           app_tag = f'  <script src="app.js?v={build}" defer></script>'
           release_scripts = (
@@ -108,29 +123,35 @@ jobs:
               + app_tag
               + f'\n  <script src="converter-v4.js?v={build}" defer></script>'
           )
-          html = html.replace(app_tag, release_scripts)
+          if app_tag not in html:
+              raise SystemExit("Base app script tag was not found")
+          html = html.replace(app_tag, release_scripts, 1)
 
           converter = converter_path.read_text(encoding="utf-8")
+          if "__CLASS_WORKER__" not in converter:
+              raise SystemExit("Converter worker placeholder was not found")
           converter = converter.replace("__CLASS_WORKER__", class_worker)
 
           html_path.write_text(html, encoding="utf-8")
           converter_path.write_text(converter, encoding="utf-8")
           PY
 
-          test -s assets/fonts/Krasar-Black.woff2
+          test -s assets/fonts/Krasar-Black.ttf
           test -s vendor/ffmpeg/ffmpeg.js
           test -s vendor/ffmpeg-core/ffmpeg-core.js
           test -s vendor/ffmpeg-core/ffmpeg-core.wasm
+          grep -q 'app-build' index.html
           grep -q 'font.css' index.html
           grep -q 'batch-v4.css' index.html
           grep -q 'vendor/ffmpeg/ffmpeg.js' index.html
           grep -q 'converter-v4.js' index.html
           grep -q "${CLASS_WORKER_BASENAME}" converter-v4.js
+          grep -q 'Krasar-Black.ttf' font.css
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Upload website
+      - name: Upload website artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: .
