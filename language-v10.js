@@ -9,8 +9,10 @@
     ['Convert video to audio.', 'បម្លែងវីដេអូទៅជាសំឡេង។'],
     ['Simple. Fast. Private.', 'ងាយស្រួល។ លឿន។ ឯកជន។'],
     ['Batch convert MP4, MOV, MKV, AVI, WebM and M4V directly in your browser. No uploads and no stored files.', 'បម្លែងវីដេអូ MP4, MOV, MKV, AVI, WebM និង M4V ជាបាច់ដោយផ្ទាល់ក្នុងកម្មវិធីរុករក។ មិនផ្ទុកឡើង និងមិនរក្សាទុកឯកសារ។'],
+    ['Preparing VideoToMP3 V10…', 'កំពុងរៀបចំ VideoToMP3 V10…'],
     ['The page may reload once to enable the secure browser conversion engine.', 'ទំព័រអាចផ្ទុកឡើងវិញម្តង ដើម្បីបើកម៉ាស៊ីនបម្លែងដែលមានសុវត្ថិភាពក្នុងកម្មវិធីរុករក។'],
     ['The private browser converter is preparing.', 'កម្មវិធីបម្លែងឯកជនក្នុងកម្មវិធីរុករកកំពុងរៀបចំ។'],
+    ['VideoToMP3 V10 · Browser memory only', 'VideoToMP3 V10 · ដំណើរការតែក្នុងអង្គចងចាំកម្មវិធីរុករក'],
     ['Browser memory only', 'ដំណើរការតែក្នុងអង្គចងចាំកម្មវិធីរុករក'],
     ['Private batch converter', 'កម្មវិធីបម្លែងជាបាច់ឯកជន'],
     ['Convert multiple videos to audio.', 'បម្លែងវីដេអូច្រើនទៅជាសំឡេង។'],
@@ -123,7 +125,8 @@
   function processTextNode(node) {
     if (!textOriginals.has(node)) textOriginals.set(node, node.nodeValue || '');
     const original = textOriginals.get(node);
-    node.nodeValue = language === 'km' ? translateText(original) : original;
+    const nextValue = language === 'km' ? translateText(original) : original;
+    if (node.nodeValue !== nextValue) node.nodeValue = nextValue;
   }
 
   function processAttributes(element) {
@@ -137,7 +140,8 @@
       if (!element.hasAttribute(name)) continue;
       if (!saved.has(name)) saved.set(name, element.getAttribute(name));
       const original = saved.get(name);
-      element.setAttribute(name, language === 'km' ? (ATTRIBUTES.get(original) || translatePhrase(original)) : original);
+      const nextValue = language === 'km' ? (ATTRIBUTES.get(original) || translatePhrase(original)) : original;
+      if (element.getAttribute(name) !== nextValue) element.setAttribute(name, nextValue);
     }
   }
 
