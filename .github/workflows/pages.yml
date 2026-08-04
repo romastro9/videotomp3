@@ -31,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          rm -rf _site /tmp/ffmpeg-package /tmp/core-package
+          rm -rf _site /tmp/ffmpeg-package /tmp/core-package /tmp/ffmpeg-core.mjs
           mkdir -p _site/assets/fonts _site/vendor/ffmpeg _site/vendor/ffmpeg-core
           mkdir -p /tmp/ffmpeg-package /tmp/core-package
 
@@ -146,6 +146,27 @@ jobs:
               raise SystemExit("Class worker placeholder missing")
           converter = converter.replace("__CLASS_WORKER__", class_worker)
 
+          worker_line = f"  const CLASS_WORKER_URL = new URL('vendor/ffmpeg/{class_worker}', document.baseURI).href;"
+          if worker_line not in converter:
+              raise SystemExit("Unable to locate generated class-worker line")
+          converter = converter.replace(
+              worker_line,
+              worker_line
+              + f'\n  const BUILD_ID = document.querySelector(\'meta[name="videotomp3-build"]\')?.content || "{build}";'
+              + "\n  const withBuild = (url) => `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(BUILD_ID)}`;",
+              1,
+          )
+
+          replacements = {
+              "classWorkerURL: CLASS_WORKER_URL,": "classWorkerURL: withBuild(CLASS_WORKER_URL),",
+              "coreURL: `${ENGINE_BASE}ffmpeg-core.js`,": "coreURL: withBuild(`${ENGINE_BASE}ffmpeg-core.js`),",
+              "wasmURL: `${ENGINE_BASE}ffmpeg-core.wasm`": "wasmURL: withBuild(`${ENGINE_BASE}ffmpeg-core.wasm`)",
+          }
+          for old, new in replacements.items():
+              if old not in converter:
+                  raise SystemExit(f"Unable to locate converter setting: {old}")
+              converter = converter.replace(old, new, 1)
+
           html_path.write_text(html, encoding="utf-8")
           converter_path.write_text(converter, encoding="utf-8")
           PY
@@ -156,16 +177,29 @@ jobs:
           test -s "${CLASS_WORKER}"
           test -s _site/vendor/ffmpeg-core/ffmpeg-core.js
           test -s _site/vendor/ffmpeg-core/ffmpeg-core.wasm
-          grep -Eq 'export[[:space:]]+default' _site/vendor/ffmpeg-core/ffmpeg-core.js
+
+          # Parse the copied core as an ES module and verify its default factory export.
+          cp _site/vendor/ffmpeg-core/ffmpeg-core.js /tmp/ffmpeg-core.mjs
+          node --input-type=module - <<'NODE'
+          const module = await import('file:///tmp/ffmpeg-core.mjs');
+          if (typeof module.default !== 'function') {
+            throw new Error('FFmpeg ESM core has no default factory export');
+          }
+          console.log('Validated FFmpeg ESM core default export');
+          NODE
+
           grep -q 'font.css' _site/index.html
           grep -q 'batch-v4.css' _site/index.html
           grep -q 'vendor/ffmpeg/ffmpeg.js' _site/index.html
           grep -q 'converter-v4.js' _site/index.html
           grep -q "${CLASS_WORKER_BASENAME}" _site/converter-v4.js
+          grep -q 'withBuild(CLASS_WORKER_URL)' _site/converter-v4.js
+          grep -q 'withBuild(`${ENGINE_BASE}ffmpeg-core.js`)' _site/converter-v4.js
+          grep -q 'withBuild(`${ENGINE_BASE}ffmpeg-core.wasm`)' _site/converter-v4.js
           ! grep -q '__CLASS_WORKER__' _site/converter-v4.js
           ! grep -q '@ffmpeg/ffmpeg@0.11' _site/index.html
 
-          echo "Built VideoToMP3 ${BUILD_SHA} with ESM FFmpeg core"
+          echo "Built VideoToMP3 ${BUILD_SHA} with cache-busted ESM FFmpeg core"
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
