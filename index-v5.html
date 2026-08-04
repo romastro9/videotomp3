@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Private browser-based batch video to audio converter.">
+  <meta name="theme-color" content="#f5f5f7">
+  <title>VideoToMP3 V5</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="font.css?v=5">
+  <link rel="stylesheet" href="batch-v4.css?v=5">
+  <script src="vendor/ffmpeg/ffmpeg.js?v=5" defer></script>
+  <script src="bootstrap-v5.js?v=5" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Main navigation">
+      <a class="brand" href="#top" aria-label="VideoToMP3 home">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M9 7.5v9l8-4.5-8-4.5Z"/><path d="M5 3.5h14a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-13a2 2 0 0 1 2-2Z"/></svg>
+        </span>
+        <span>VideoToMP3 V5</span>
+      </a>
+      <div class="nav-actions">
+        <span class="private-badge">Krasar Black</span>
+        <button id="theme-button" class="icon-button" type="button" aria-label="Toggle dark mode">☼</button>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="shell">
+        <p class="eyebrow">Private batch audio conversion</p>
+        <h1><span>Convert video to audio.</span><br><span class="gradient-text">Simple. Fast. Private.</span></h1>
+        <p class="hero-copy">Batch convert MP4, MOV, MKV, AVI, WebM and M4V directly in your browser. No uploads and no stored files.</p>
+      </div>
+    </section>
+
+    <section id="converter" class="converter-section shell">
+      <div class="converter-card">
+        <div class="status-stage" aria-live="polite">
+          <h3>Loading VideoToMP3 V5…</h3>
+          <p>The private browser converter is preparing.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><div class="shell">VideoToMP3 V5 · Browser memory only</div></footer>
+</body>
+</html>
