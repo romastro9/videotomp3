@@ -1,4 +1,4 @@
-name: Deploy VideoToMP3 V8
+name: Deploy VideoToMP3 V9
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build static V8 release
+      - name: Build isolated V9 release
         run: |
           set -euo pipefail
 
@@ -33,8 +33,18 @@ jobs:
           mkdir -p _site/assets/fonts
 
           cp index-v5.html _site/index.html
-          cp styles.css font.css batch-v4.css favicon.svg .nojekyll theme-v6.js ffmpeg-legacy-adapter.js _site/
-          cp converter-v4.js _site/converter-v8.js
+          cp \
+            styles.css \
+            font.css \
+            batch-v4.css \
+            favicon.svg \
+            .nojekyll \
+            theme-v6.js \
+            ffmpeg-legacy-adapter.js \
+            coi-bootstrap.js \
+            coi-serviceworker.js \
+            _site/
+          cp converter-v4.js _site/converter-v9.js
 
           cat font-parts/Krasar-Black.woff2.part*.b64 \
             | base64 --decode \
@@ -47,7 +57,7 @@ jobs:
           if len(font) < 10000 or font[:4] != b'wOF2':
               raise SystemExit('Krasar Black WOFF2 validation failed')
 
-          converter_path = Path('_site/converter-v8.js')
+          converter_path = Path('_site/converter-v9.js')
           converter = converter_path.read_text(encoding='utf-8')
           converter = converter.replace(
               "new URL('vendor/ffmpeg-core/', document.baseURI).href",
@@ -55,7 +65,7 @@ jobs:
           )
           converter = converter.replace(
               "new URL('vendor/ffmpeg/__CLASS_WORKER__', document.baseURI).href",
-              "new URL('ffmpeg-legacy-adapter.js?v=8', document.baseURI).href"
+              "new URL('ffmpeg-legacy-adapter.js?v=9', document.baseURI).href"
           )
           converter_path.write_text(converter, encoding='utf-8')
 
@@ -64,22 +74,33 @@ jobs:
 
           node --check _site/theme-v6.js
           node --check _site/ffmpeg-legacy-adapter.js
-          node --check _site/converter-v8.js
+          node --check _site/coi-bootstrap.js
+          node --check _site/coi-serviceworker.js
+          node --check _site/converter-v9.js
 
           test -s _site/index.html
           test -s _site/assets/fonts/Krasar-Black.woff2
           test -s _site/ffmpeg-legacy-adapter.js
-          test -s _site/converter-v8.js
+          test -s _site/coi-bootstrap.js
+          test -s _site/coi-serviceworker.js
+          test -s _site/converter-v9.js
 
-          grep -q 'VideoToMP3 V8' _site/index.html
-          grep -q '@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js' _site/index.html
+          grep -q 'VideoToMP3 V9' _site/index.html
+          grep -q 'coi-bootstrap.js?v=9' _site/index.html
+          grep -q 'coi-serviceworker.js?v=' _site/coi-bootstrap.js
+          grep -q 'window.crossOriginIsolated' _site/coi-bootstrap.js
+          grep -q 'SharedArrayBuffer' _site/coi-bootstrap.js
+          grep -q 'Cross-Origin-Opener-Policy' _site/coi-serviceworker.js
+          grep -q 'Cross-Origin-Embedder-Policy' _site/coi-serviceworker.js
+          grep -q 'credentialless' _site/coi-serviceworker.js
+          grep -q '@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js' _site/coi-bootstrap.js
           grep -q '@ffmpeg/core@0.11.0/dist/ffmpeg-core.js' _site/ffmpeg-legacy-adapter.js
-          grep -q 'converter-v8.js?v=8' _site/index.html
+          grep -q 'converter-v9.js' _site/coi-bootstrap.js
           grep -q 'window.FFmpegWASM' _site/ffmpeg-legacy-adapter.js
-          ! grep -q '__CLASS_WORKER__' _site/converter-v8.js
-          ! grep -q 'vendor/ffmpeg-core/' _site/converter-v8.js
+          ! grep -q '__CLASS_WORKER__' _site/converter-v9.js
+          ! grep -q 'vendor/ffmpeg-core/' _site/converter-v9.js
           ! grep -q 'bootstrap-v5.js' _site/index.html
-          ! grep -q 'blob:' _site/ffmpeg-legacy-adapter.js
+          ! grep -q 'blob:' _site/coi-bootstrap.js
 
           python - <<'PY'
           from pathlib import Path
@@ -91,13 +112,15 @@ jobs:
               'batch-v4.css',
               'theme-v6.js',
               'ffmpeg-legacy-adapter.js',
-              'converter-v8.js',
+              'coi-bootstrap.js',
+              'coi-serviceworker.js',
+              'converter-v9.js',
               'assets/fonts/Krasar-Black.woff2',
           ]
           missing = [item for item in required if not Path('_site', item).is_file()]
           if missing:
-              raise SystemExit(f'Missing V8 release files: {missing}')
-          print('VideoToMP3 V8 static artifact verified.')
+              raise SystemExit(f'Missing V9 release files: {missing}')
+          print('VideoToMP3 V9 isolated static artifact verified.')
           PY
 
       - name: Configure GitHub Pages
