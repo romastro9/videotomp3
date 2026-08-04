@@ -1,4 +1,4 @@
-name: Deploy VideoToMP3 V4
+name: Deploy VideoToMP3 V5
 
 on:
   push:
@@ -25,187 +25,46 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build verified V4 site
-        env:
-          BUILD_SHA: ${{ github.sha }}
+      - name: Build static V5 release
         run: |
           set -euo pipefail
-
           rm -rf _site /tmp/ffmpeg-package
           mkdir -p _site/assets/fonts _site/vendor/ffmpeg /tmp/ffmpeg-package
 
-          rsync -a \
-            --exclude='.git/' \
-            --exclude='.github/' \
-            --exclude='_site/' \
-            ./ _site/
+          cp index-v5.html _site/index.html
+          cp styles.css font.css batch-v4.css converter-v4.js bootstrap-v5.js favicon.svg .nojekyll _site/
 
-          # Restore and validate the exact Krasar Black WOFF2 supplied by the owner.
           cat font-parts/Krasar-Black.woff2.part*.b64 \
             | base64 --decode \
             > _site/assets/fonts/Krasar-Black.woff2
 
           python - <<'PY'
           from pathlib import Path
-          font = Path("_site/assets/fonts/Krasar-Black.woff2").read_bytes()
-          if len(font) < 10000 or font[:4] != b"wOF2":
-              raise SystemExit("Krasar Black WOFF2 validation failed")
-          print(f"Validated Krasar Black WOFF2: {len(font)} bytes")
+          font = Path('_site/assets/fonts/Krasar-Black.woff2').read_bytes()
+          if len(font) < 10000 or font[:4] != b'wOF2':
+              raise SystemExit('Krasar Black WOFF2 validation failed')
+          print(f'Validated Krasar Black WOFF2: {len(font)} bytes')
           PY
 
-          # Host the FFmpeg browser API and its module worker on GitHub Pages.
-          FFMPEG_TGZ="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
-          tar -xzf "/tmp/${FFMPEG_TGZ}" -C /tmp/ffmpeg-package
-          cp -a /tmp/ffmpeg-package/package/dist/umd/. _site/vendor/ffmpeg/
+          PACKAGE_FILE="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
+          tar -xzf "/tmp/${PACKAGE_FILE}" -C /tmp/ffmpeg-package
+          cp /tmp/ffmpeg-package/package/dist/umd/ffmpeg.js _site/vendor/ffmpeg/ffmpeg.js
 
-          CLASS_WORKER="$(find _site/vendor/ffmpeg -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' | head -n 1)"
-          test -n "${CLASS_WORKER}"
-          export CLASS_WORKER_BASENAME="$(basename "${CLASS_WORKER}")"
+          WORKER_FILE="$(find /tmp/ffmpeg-package/package/dist/umd -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' | head -n 1)"
+          test -n "${WORKER_FILE}"
+          cp "${WORKER_FILE}" _site/vendor/ffmpeg/ffmpeg-worker.js
 
-          python - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          build = os.environ["BUILD_SHA"][:12]
-          class_worker = os.environ["CLASS_WORKER_BASENAME"]
-          html_path = Path("_site/index.html")
-          converter_path = Path("_site/converter-v4.js")
-
-          html = html_path.read_text(encoding="utf-8")
-
-          html = re.sub(
-              r'\s*<script[^>]+(?:@ffmpeg/ffmpeg|vendor/ffmpeg|vendor/lame|converter-v2|converter-v3|converter-v4)[^>]*></script>',
-              '',
-              html,
-              flags=re.IGNORECASE,
-          )
-          html = re.sub(
-              r'\s*<link[^>]+href="(?:font|batch-v4)\.css(?:\?[^\"]*)?"[^>]*>',
-              '',
-              html,
-              flags=re.IGNORECASE,
-          )
-          html = re.sub(
-              r'\s*<meta[^>]+name="videotomp3-build"[^>]*>',
-              '',
-              html,
-              flags=re.IGNORECASE,
-          )
-          html = re.sub(
-              r'href="styles\.css(?:\?[^\"]*)?"',
-              f'href="styles.css?v={build}"',
-              html,
-          )
-          html = re.sub(
-              r'src="app\.js(?:\?[^\"]*)?"',
-              f'src="app.js?v={build}"',
-              html,
-          )
-
-          styles_tag = f'  <link rel="stylesheet" href="styles.css?v={build}">'
-          if styles_tag not in html:
-              raise SystemExit("Unable to locate styles.css tag")
-          html = html.replace(
-              styles_tag,
-              styles_tag
-              + f'\n  <link rel="stylesheet" href="font.css?v={build}">'
-              + f'\n  <link rel="stylesheet" href="batch-v4.css?v={build}">',
-              1,
-          )
-
-          app_tag = f'  <script src="app.js?v={build}" defer></script>'
-          if app_tag not in html:
-              raise SystemExit("Unable to locate app.js tag")
-          html = html.replace(
-              app_tag,
-              f'  <script src="vendor/ffmpeg/ffmpeg.js?v={build}" defer></script>\n'
-              + app_tag
-              + f'\n  <script src="converter-v4.js?v={build}" defer></script>',
-              1,
-          )
-          html = html.replace(
-              '</head>',
-              f'  <meta name="videotomp3-build" content="{build}">\n</head>',
-              1,
-          )
-
-          converter = converter_path.read_text(encoding="utf-8")
-          if "__CLASS_WORKER__" not in converter:
-              raise SystemExit("Class worker placeholder missing")
-          converter = converter.replace("__CLASS_WORKER__", class_worker)
-
-          new_constants = f'''  const CLASS_WORKER_URL = new URL('vendor/ffmpeg/{class_worker}?v={build}', document.baseURI).href;
-          const CORE_BASE_URL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/';
-          const CORE_JS_URL = `${{CORE_BASE_URL}}ffmpeg-core.js`;
-          const CORE_WASM_URL = `${{CORE_BASE_URL}}ffmpeg-core.wasm`;
-          const ENGINE_BLOB_URLS = [];
-
-          async function fetchAsBlobURL(url, mimeType) {{
-            const response = await fetch(url, {{ cache: 'force-cache' }});
-            if (!response.ok) {{
-              throw new Error(`Unable to load conversion engine (${{response.status}}).`);
-            }}
-            const bytes = await response.arrayBuffer();
-            const blobURL = URL.createObjectURL(new Blob([bytes], {{ type: mimeType }}));
-            ENGINE_BLOB_URLS.push(blobURL);
-            return blobURL;
-          }}'''
-
-          converter, constants_count = re.subn(
-              r"  const ENGINE_BASE = new URL\('vendor/ffmpeg-core/', document\.baseURI\)\.href;\s*"
-              r"  const CLASS_WORKER_URL = new URL\('vendor/ffmpeg/[^']+', document\.baseURI\)\.href;",
-              lambda _: new_constants,
-              converter,
-              count=1,
-          )
-          if constants_count != 1:
-              raise SystemExit(f"FFmpeg constants replacement count: {constants_count}")
-
-          new_load = '''      const [coreURL, wasmURL] = await Promise.all([
-                  fetchAsBlobURL(CORE_JS_URL, 'text/javascript'),
-                  fetchAsBlobURL(CORE_WASM_URL, 'application/wasm')
-                ]);
-                await instance.load({
-                  classWorkerURL: CLASS_WORKER_URL,
-                  coreURL,
-                  wasmURL
-                });'''
-
-          converter, load_count = re.subn(
-              r"      await instance\.load\(\{\s*"
-              r"classWorkerURL: CLASS_WORKER_URL,\s*"
-              r"coreURL: `\$\{ENGINE_BASE\}ffmpeg-core\.js`,\s*"
-              r"wasmURL: `\$\{ENGINE_BASE\}ffmpeg-core\.wasm`\s*"
-              r"\}\);",
-              lambda _: new_load,
-              converter,
-              count=1,
-          )
-          if load_count != 1:
-              raise SystemExit(f"FFmpeg load replacement count: {load_count}")
-
-          html_path.write_text(html, encoding="utf-8")
-          converter_path.write_text(converter, encoding="utf-8")
-          PY
-
-          # Fail before deployment if the generated release is incomplete.
+          node --check _site/bootstrap-v5.js
+          node --check _site/converter-v4.js
+          test -s _site/index.html
           test -s _site/assets/fonts/Krasar-Black.woff2
           test -s _site/vendor/ffmpeg/ffmpeg.js
-          test -s "${CLASS_WORKER}"
-          test -s _site/converter-v4.js
-          grep -q 'font.css' _site/index.html
-          grep -q 'batch-v4.css' _site/index.html
-          grep -q 'vendor/ffmpeg/ffmpeg.js' _site/index.html
-          grep -q 'converter-v4.js' _site/index.html
-          grep -q 'cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/' _site/converter-v4.js
-          grep -q 'fetchAsBlobURL(CORE_JS_URL' _site/converter-v4.js
-          grep -q 'fetchAsBlobURL(CORE_WASM_URL' _site/converter-v4.js
-          ! grep -q 'vendor/ffmpeg-core/' _site/converter-v4.js
-          ! grep -q '__CLASS_WORKER__' _site/converter-v4.js
-          ! grep -q '@ffmpeg/ffmpeg@0.11' _site/index.html
+          test -s _site/vendor/ffmpeg/ffmpeg-worker.js
+          grep -q 'bootstrap-v5.js' _site/index.html
+          grep -q 'ffmpeg-worker.js' _site/bootstrap-v5.js
+          grep -q '@ffmpeg/core@0.12.10/dist/esm/' _site/bootstrap-v5.js
 
-          echo "Built VideoToMP3 ${BUILD_SHA} with official FFmpeg ESM Blob URLs"
+          echo 'VideoToMP3 V5 static release validated.'
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
