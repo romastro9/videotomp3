@@ -1,6 +1,9 @@
 @font-face {
   font-family: "Krasar Black";
-  src: url("./assets/fonts/Krasar-Black.ttf") format("truetype");
+  src:
+    local("Krasar Black"),
+    local("Krasar-Black"),
+    url("./assets/fonts/Krasar-Black.woff2") format("woff2");
   font-style: normal;
   font-weight: 900;
   font-display: swap;
