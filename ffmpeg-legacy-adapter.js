@@ -1,6 +1,10 @@
 (() => {
   'use strict';
 
+  if (!window.crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
+    throw new Error('Secure browser isolation is not active yet. Refresh the page once.');
+  }
+
   if (!window.FFmpeg || typeof window.FFmpeg.createFFmpeg !== 'function') {
     throw new Error('Legacy FFmpeg browser API failed to load.');
   }
@@ -40,6 +44,10 @@
     async load() {
       if (this.loaded && this.instance) return false;
 
+      if (!window.crossOriginIsolated || typeof SharedArrayBuffer === 'undefined') {
+        throw new Error('Secure browser isolation is not active. Reload the page and try again.');
+      }
+
       this.instance = window.FFmpeg.createFFmpeg({
         corePath: CORE_PATH,
         log: false,
@@ -59,7 +67,7 @@
       } catch (error) {
         this.instance = null;
         const detail = error instanceof Error ? error.message : String(error);
-        throw new Error(`Unable to load the classic FFmpeg engine: ${detail}`);
+        throw new Error(`Unable to load the isolated FFmpeg engine: ${detail}`);
       }
 
       this.loaded = true;
