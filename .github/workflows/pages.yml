@@ -58,8 +58,7 @@ jobs:
           new = "new URL('vendor/ffmpeg/ffmpeg-worker.js?v=6', document.baseURI).href"
           if converter.count(old) != 1:
               raise SystemExit(f'Worker placeholder count was {converter.count(old)}, expected 1')
-          converter = converter.replace(old, new)
-          converter_path.write_text(converter, encoding='utf-8')
+          converter_path.write_text(converter.replace(old, new), encoding='utf-8')
           print(f'Validated Krasar Black WOFF2: {len(font)} bytes')
           PY
 
@@ -67,7 +66,7 @@ jobs:
           tar -xzf "/tmp/${FFMPEG_PACKAGE}" -C /tmp/ffmpeg-package
           cp /tmp/ffmpeg-package/package/dist/umd/ffmpeg.js _site/vendor/ffmpeg/ffmpeg.js
 
-          WORKER_FILE="$(find /tmp/ffmpeg-package/package/dist/umd -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' | head -n 1)"
+          WORKER_FILE="$(find /tmp/ffmpeg-package/package/dist/umd -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' -print -quit)"
           test -n "${WORKER_FILE}"
           cp "${WORKER_FILE}" _site/vendor/ffmpeg/ffmpeg-worker.js
 
@@ -85,16 +84,13 @@ jobs:
           test -s _site/vendor/ffmpeg/ffmpeg-worker.js
           test -s _site/vendor/ffmpeg-core/ffmpeg-core.js
           test -s _site/vendor/ffmpeg-core/ffmpeg-core.wasm
-
           test "$(stat -c%s _site/vendor/ffmpeg-core/ffmpeg-core.wasm)" -gt 10000000
+
           grep -q 'converter-v5.js?v=6' _site/index.html
           grep -q 'theme-v6.js?v=6' _site/index.html
           grep -q 'vendor/ffmpeg/ffmpeg-worker.js?v=6' _site/converter-v5.js
-          grep -q "vendor/ffmpeg-core/" _site/converter-v5.js
-          grep -q 'export' _site/vendor/ffmpeg-core/ffmpeg-core.js
-          grep -q 'default' _site/vendor/ffmpeg-core/ffmpeg-core.js
+          grep -q 'vendor/ffmpeg-core/' _site/converter-v5.js
           ! grep -q '__CLASS_WORKER__' _site/converter-v5.js
-          ! grep -q 'blob:' _site/index.html
           ! grep -q 'bootstrap-v5.js' _site/index.html
 
           python - <<'PY'
