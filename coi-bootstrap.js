@@ -1,12 +1,16 @@
-/* VideoToMP3 V9 secure engine bootstrap.
+/* VideoToMP3 V10 secure engine bootstrap.
    Registers the isolation service worker, reloads once, then loads FFmpeg. */
 
 (() => {
   'use strict';
 
-  const RELEASE = '9';
+  const RELEASE = '10';
   const RELOAD_KEY = 'videotomp3-coi-reloads';
   const cardSelector = '.converter-card';
+
+  function t(value) {
+    return window.VideoToMP3I18n?.translate(value) || value;
+  }
 
   function showStatus(title, message, isError = false) {
     const render = () => {
@@ -14,8 +18,8 @@
       if (!card) return;
       card.innerHTML = `
         <div class="status-stage${isError ? ' alert' : ''}" aria-live="polite">
-          <h3>${escapeHtml(title)}</h3>
-          <p>${escapeHtml(message)}</p>
+          <h3>${escapeHtml(t(title))}</h3>
+          <p>${escapeHtml(t(message))}</p>
         </div>`;
     };
 
@@ -30,9 +34,7 @@
     return String(value)
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
+      .replaceAll('>', '&gt;');
   }
 
   function loadScript(src, crossOrigin = false) {
@@ -49,7 +51,7 @@
 
   async function startConverter() {
     sessionStorage.removeItem(RELOAD_KEY);
-    showStatus('Loading VideoToMP3 V9…', 'Starting the isolated browser conversion engine.');
+    showStatus('Loading VideoToMP3 V10…', 'Starting the isolated browser conversion engine.');
 
     await loadScript(
       'https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.11.6/dist/ffmpeg.min.js',
@@ -57,7 +59,7 @@
     );
     await loadScript(`ffmpeg-legacy-adapter.js?v=${RELEASE}`);
     await loadScript(`theme-v6.js?v=${RELEASE}`);
-    await loadScript(`converter-v9.js?v=${RELEASE}`);
+    await loadScript(`converter-v10.js?v=${RELEASE}`);
   }
 
   async function enableIsolation() {
@@ -106,6 +108,14 @@
 
     await enableIsolation();
   }
+
+  document.addEventListener('videotomp3:languagechange', () => {
+    const stage = document.querySelector('.status-stage');
+    if (!stage || document.querySelector('.batch-converter')) return;
+    const title = stage.querySelector('h3')?.textContent || '';
+    const message = stage.querySelector('p')?.textContent || '';
+    if (title && message) showStatus(title, message, stage.classList.contains('alert'));
+  });
 
   boot().catch((error) => {
     const detail = error instanceof Error ? error.message : String(error);
