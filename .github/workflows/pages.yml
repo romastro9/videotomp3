@@ -1,4 +1,4 @@
-name: Deploy VideoToMP3 V5
+name: Deploy VideoToMP3 V6
 
 on:
   push:
@@ -25,14 +25,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Build static V5 release
+      - name: Build verified V6 release
         run: |
           set -euo pipefail
-          rm -rf _site /tmp/ffmpeg-package
-          mkdir -p _site/assets/fonts _site/vendor/ffmpeg /tmp/ffmpeg-package
+
+          rm -rf _site /tmp/ffmpeg-package /tmp/core-package
+          mkdir -p \
+            _site/assets/fonts \
+            _site/vendor/ffmpeg \
+            _site/vendor/ffmpeg-core \
+            /tmp/ffmpeg-package \
+            /tmp/core-package
 
           cp index-v5.html _site/index.html
-          cp styles.css font.css batch-v4.css converter-v4.js bootstrap-v5.js favicon.svg .nojekyll _site/
+          cp styles.css font.css batch-v4.css favicon.svg .nojekyll theme-v6.js _site/
+          cp converter-v4.js _site/converter-v5.js
 
           cat font-parts/Krasar-Black.woff2.part*.b64 \
             | base64 --decode \
@@ -40,31 +47,77 @@ jobs:
 
           python - <<'PY'
           from pathlib import Path
+
           font = Path('_site/assets/fonts/Krasar-Black.woff2').read_bytes()
           if len(font) < 10000 or font[:4] != b'wOF2':
               raise SystemExit('Krasar Black WOFF2 validation failed')
+
+          converter_path = Path('_site/converter-v5.js')
+          converter = converter_path.read_text(encoding='utf-8')
+          old = "new URL('vendor/ffmpeg/__CLASS_WORKER__', document.baseURI).href"
+          new = "new URL('vendor/ffmpeg/ffmpeg-worker.js?v=6', document.baseURI).href"
+          if converter.count(old) != 1:
+              raise SystemExit(f'Worker placeholder count was {converter.count(old)}, expected 1')
+          converter = converter.replace(old, new)
+          converter_path.write_text(converter, encoding='utf-8')
           print(f'Validated Krasar Black WOFF2: {len(font)} bytes')
           PY
 
-          PACKAGE_FILE="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
-          tar -xzf "/tmp/${PACKAGE_FILE}" -C /tmp/ffmpeg-package
+          FFMPEG_PACKAGE="$(npm pack --silent @ffmpeg/ffmpeg@0.12.15 --pack-destination /tmp)"
+          tar -xzf "/tmp/${FFMPEG_PACKAGE}" -C /tmp/ffmpeg-package
           cp /tmp/ffmpeg-package/package/dist/umd/ffmpeg.js _site/vendor/ffmpeg/ffmpeg.js
 
           WORKER_FILE="$(find /tmp/ffmpeg-package/package/dist/umd -maxdepth 1 -type f -name '*.js' ! -name 'ffmpeg.js' | head -n 1)"
           test -n "${WORKER_FILE}"
           cp "${WORKER_FILE}" _site/vendor/ffmpeg/ffmpeg-worker.js
 
-          node --check _site/bootstrap-v5.js
-          node --check _site/converter-v4.js
+          CORE_PACKAGE="$(npm pack --silent @ffmpeg/core@0.12.10 --pack-destination /tmp)"
+          tar -xzf "/tmp/${CORE_PACKAGE}" -C /tmp/core-package
+          cp /tmp/core-package/package/dist/esm/ffmpeg-core.js _site/vendor/ffmpeg-core/ffmpeg-core.js
+          cp /tmp/core-package/package/dist/esm/ffmpeg-core.wasm _site/vendor/ffmpeg-core/ffmpeg-core.wasm
+
+          node --check _site/theme-v6.js
+          node --check _site/converter-v5.js
+
           test -s _site/index.html
           test -s _site/assets/fonts/Krasar-Black.woff2
           test -s _site/vendor/ffmpeg/ffmpeg.js
           test -s _site/vendor/ffmpeg/ffmpeg-worker.js
-          grep -q 'bootstrap-v5.js' _site/index.html
-          grep -q 'ffmpeg-worker.js' _site/bootstrap-v5.js
-          grep -q '@ffmpeg/core@0.12.10/dist/esm/' _site/bootstrap-v5.js
+          test -s _site/vendor/ffmpeg-core/ffmpeg-core.js
+          test -s _site/vendor/ffmpeg-core/ffmpeg-core.wasm
 
-          echo 'VideoToMP3 V5 static release validated.'
+          test "$(stat -c%s _site/vendor/ffmpeg-core/ffmpeg-core.wasm)" -gt 10000000
+          grep -q 'converter-v5.js?v=6' _site/index.html
+          grep -q 'theme-v6.js?v=6' _site/index.html
+          grep -q 'vendor/ffmpeg/ffmpeg-worker.js?v=6' _site/converter-v5.js
+          grep -q "vendor/ffmpeg-core/" _site/converter-v5.js
+          grep -q 'export' _site/vendor/ffmpeg-core/ffmpeg-core.js
+          grep -q 'default' _site/vendor/ffmpeg-core/ffmpeg-core.js
+          ! grep -q '__CLASS_WORKER__' _site/converter-v5.js
+          ! grep -q 'blob:' _site/index.html
+          ! grep -q 'bootstrap-v5.js' _site/index.html
+
+          python - <<'PY'
+          from pathlib import Path
+
+          required = [
+              'index.html',
+              'styles.css',
+              'font.css',
+              'batch-v4.css',
+              'theme-v6.js',
+              'converter-v5.js',
+              'assets/fonts/Krasar-Black.woff2',
+              'vendor/ffmpeg/ffmpeg.js',
+              'vendor/ffmpeg/ffmpeg-worker.js',
+              'vendor/ffmpeg-core/ffmpeg-core.js',
+              'vendor/ffmpeg-core/ffmpeg-core.wasm',
+          ]
+          missing = [item for item in required if not Path('_site', item).is_file()]
+          if missing:
+              raise SystemExit(f'Missing release files: {missing}')
+          print('VideoToMP3 V6 static artifact verified.')
+          PY
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
