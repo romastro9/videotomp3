@@ -5,10 +5,7 @@
     throw new Error('Legacy FFmpeg browser API failed to load.');
   }
 
-  const CORE_PATH = new URL(
-    'vendor/ffmpeg-core-legacy/ffmpeg-core.js',
-    document.baseURI
-  ).href;
+  const CORE_PATH = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.11.0/dist/ffmpeg-core.js';
 
   class LegacyFFmpegAdapter {
     constructor() {
@@ -57,7 +54,14 @@
         }
       });
 
-      await this.instance.load();
+      try {
+        await this.instance.load();
+      } catch (error) {
+        this.instance = null;
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`Unable to load the classic FFmpeg engine: ${detail}`);
+      }
+
       this.loaded = true;
       return true;
     }
